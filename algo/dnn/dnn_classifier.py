@@ -64,12 +64,13 @@ class DnnClassifier:
             indices = np.random.permutation(self.data_size)
         else:
             indices = [i for i in range(self.data_size)]
-        print(self.w[1].shape, self.w[2].shape, self.w[3].shape)
+        # print(self.w[1].shape, self.w[2].shape, self.w[3].shape)
         for j in range(self.batch_num):
             start = j * self.batch_size
             end = min(start + self.batch_size, self.data_size)
             batch_ind = indices[start:end]
             a = self.forward(x[batch_ind], y[batch_ind])
+            print('hxm-a:',a[1].shape,a[2].shape,a[3].shape)
             self.update_w_b(a, x[batch_ind], y[batch_ind])
 
     def update_w_b(self, a, batch_x, batch_y):
@@ -77,29 +78,32 @@ class DnnClassifier:
         db_ = {}
         current_batch_size = batch_x.shape[0]
         # 根据不同的损失函数、激活函数的求导公式，计算w和b的梯度
+        '''
+        根据链式法则：倒数第一层隐层到最后输出神经元的w的导数=损失函数对y_hat的导数*y_hat对输入最后一个神经元的数据的导数（即sigmoid的导数）
+        *进入最后一个神经元的数据对上一层神经元输出数据的导数（即为wx的导数w），如果需计算倒数第2隐层到倒数第1
+        隐层之间w的导数，需要继续使用链式法则
+        '''
         # 根据不同的优化函数更新w和b
         # 以下使用了交叉熵的损失函数、sigmoid的激活函数的导数
-        da_last = a[self.layer_num] - batch_y
-        print("hxm", a[1].shape, a[2].shape, a[3].shape)
-        da = da_last
-        db_[self.layer_num] = np.sum(da_last)/current_batch_size
+        # 计算最后一层残差的负值
+        d_last = a[self.layer_num] - batch_y
+        print("hxm", self.layer_num, d_last.shape)
+        # 最后一层神经元的bias的梯度
+        db_[self.layer_num] = np.sum(d_last)/current_batch_size
+        dz = d_last
+        # 从最大的层开始计算每一层w和b的梯度，这里所有的神经元的激活函数都是sigmoid，所以计算方式都一样
         for i in range(self.layer_num, 1, -1):
-            if i == 1:
-                dz = da_last
-            else:
-                dz = a[i] * ( 1 - a[i] ) * da
-            print("hxm", da.shape, dz.shape, a[i-1].T.shape, current_batch_size)
-            dw = np.dot(dz, a[i-1].T) / current_batch_size
-            db = np.mean(dz, axis=1, keepdims=True)
-            da_tmp = np.dot(self.w[i].T, dz)
-            da = da_tmp
-            dw_[i+1] = dw
-            db_[i] = db
-        dw_[1] = np.dot(batch_x.T, da)
+            print("hxm-i ", i)
+            dw_[i] = np.dot(a[i-1].T, dz)
+            dz = np.dot(a[i] * ( 1 - a[i] ) * dz, self.w[i].T)
+            db_[i-1] = dz.sum(0)
+        dw_[1] = np.dot(batch_x.T, dz)
+        print("hxm1 ", dw_[1].shape, dw_[2].shape, dw_[3].shape)
+        print("hxm2 ", db_[1].shape, db_[2].shape, db_[3].shape)
         self.optimizer(dw_, db_)
         # self.w[layer_index] -= self.learning_rate * dw
         # self.b[layer_index] -= self.learning_rate * db
-        pass
+        # pass
 
     def forward(self, batch_x, batch_y):
         a = {}
@@ -118,7 +122,7 @@ class DnnClassifier:
         return self.sigmoid(z)
 
     def sgd(self, dw_, db_):
-        for i in range(1, self.layer_num + 1):
+        for i in range(1, self.layer_num):
             self.w[i] = self.w[i] - self.learning_rate * dw_[i]
             self.b[i] = self.b[i] - self.learning_rate * db_[i]
 
